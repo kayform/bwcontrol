@@ -3,14 +3,23 @@
 Introduction
 ============
 
-**bwcontrol** is an control plugin for bottled water. It means that the plugin can control Bottledwater process by APIs. Also, have communication interface with Kafka-Connect with JSON format via HTTP.
+**bwcontrol** is an control plugin for bottled water. It means that the plugin can control Bottledwater process by APIs and this plugin support configurable whitelist of table feature. Also, have communication interface with Kafka-Connect with JSON format via HTTP.
 
 **bwcontrol** is released under PostgreSQL license.
 
 Requirements
 ============
 
-* PostgreSQL 9.4+
+* PostgreSQL 9.5+
+* Bottledwater (custmized version: https://github.com/kayform/bottledwater-pg.git)
+
+For addtional interworking
+Refer to https://github.com/confluentinc
+
+* Kafka Broker
+* Schema registry
+* zookeeper
+* Kafka-Connect
 
 Build and Install
 =================
@@ -53,7 +62,38 @@ Examples
 ========
 
 calling functions via SQL.
-pg....
+1. Create connection with Kafka-connect to synchronize whithlisting of table.
+	testdb=# pg_create_kafka_connect("testconnection");
+	INFO:  Success(0)
+2. Make whitelisting of table.
+	testdb=# pg_add_ingest_table("testtable", 1, 1, '');
+	INFO:  Success(0)
+3. Remove table from whitelist to except sync with Kafka-connect.
+	testdb=# pg_del_ingest_table("testtable");
+	INFO:  Success(0)
+4. Check status (bwttledwater, replication_slot, kafka connect, whitelist).
+	testdb=# select pg_get_status_ingest();
+	INFO:  process running(0)
+5. Drop connection with Kafka-connect. It will stop to synchronize data stream with Kafka.
+	testdb=# pg_delete_kafka_connect("testconnection");
+	INFO:  Success(0)
+
+
+ -----------------------------|									|--------|	|---------|
+ |                            |    								|        |  |         |
+ |  PostgreSQL                |                                 |        |  |         |
+ |                            |                                 | Kafka  |  | Kafka   |
+ |		 ---------------------|  Run/Stop   |---------------|   | broker |  | Consumer|
+ |		 |                    | <---------->|               |   |        |  |         |
+ |       | bwcontrol plugin   |  Whitelist  | bottledwater  |   |        |  |         |
+ |       |                    | <---------->|               |   |        |  |         |
+ |		 ---------------------|			    |               |   |        |  |         |
+ |       |                    | Change Data |               |   |		 |  |		  |
+ |       | bottledwater plugin|  Streaming  |               |   |        |  |         |
+ |       |                    | ----------> |               |   |        |  |         |
+ |-----------------------------	 		    -----------------   ----------  -----------
+
+
 
 Bottledwater
 --------------
@@ -98,14 +138,13 @@ Dropping ...
 SQL functions
 -------------
 
-```
-$ cat /tmp/example2.sql
-```
-
-The script above produces the output below:
-
-```
-```
+pg_add_ingest_table(text table_name, int bigdata_type, int operation_type, text remark);
+pg_del_ingest_table(text table_name)
+pg_resume_ingest()
+pg_suspend_ingest()
+pg_get_status_ingest()
+pg_create_kafka_connect(text connect_name)
+pg_delete_kafka_connect(text connect_name)
 
 License
 =======
