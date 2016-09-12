@@ -71,6 +71,15 @@ void _PG_fini(void);
 		} \
     } while (0)
 
+#define CHECKMAXLEN(val_, len) \
+    do { \
+        if (val_ != NULL) \
+        { \
+            if(strlen(val_) >= len) \
+				PG_RETURN_TEXT_P(cstring_to_text("Check string length."));\
+        } \
+    } while (0)
+
 #define CHECK_RETURN(err, call) { err = call; if (err < 0) return err;}
 #define CHECK(err, call) err = call
 
@@ -83,17 +92,25 @@ void _PG_fini(void);
 #define QBUFFLEN 10240
 #define CONTENTSDATALEN 10240
 #define URLLEN 512
+#define OPTLEN 256
 #define INVALID_PID (-1)
 
 #define CONTENT_TYPE "application/json"
-#define DEFAULTURL "default-config"
+#define DEFAULTURL "dstatus efault-config"
 
+#define CHECK_TABLE_EXISTS "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '%s'"
+#define GET_DATABASE_INFO "select user, current_database() from pg_stat_activity where pg_stat_activity.pid=pg_backend_pid()"
 #define GET_REPLICATION_SETTING "select current_setting('bw.bwpath'), current_setting('bw.kafka_broker'), current_setting('bw.schema_registry'), current_setting('bw.consumer')"
 #define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
 #define DELETE_KAFKA_CONFIG "DELETE from kafka_con_config"
+#define GET_KAFKA_CONN_INFO "SELECT connect_name, contents FROM kafka_con_config"
+#define GET_TOPIC_LIST_EXCEPT_PARAM "SELECT table_name FROM tbl_mapps WHERE table_name != '%s'"
+#define GET_TOPIC_LIST "SELECT table_name FROM tbl_mapps"
+#define GENERATE_TOPICS "select jsonb_set('%s'::jsonb, '{topics}', '\"%s\"'::jsonb)"
+#define GENERATE_CONNECT_NAME "select jsonb_set(('%s'::jsonb-'tasks')::jsonb#-'{\"config\",\"name\"}', '{name}', '\"%s\"'::jsonb)"
 
 /* ------------------------------------------------
  * structures 						
@@ -190,34 +207,37 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	if (noperate < 1 || noperate > 7)
 		DB_LOG_RETURN(ERROR, K_CHECK_OPERATE, ret);
 
+	CHECKMAXLEN(table_name, NAMEDATALEN);
+	CHECKMAXLEN(conn_info, OPTLEN );
+
 	/* check option.  to do ..*/
 	if (conn_info == NULL && !strlen(conn_info))
 		DB_LOG_RETURN(ERROR, K_CHECK_OPTION, ret);
 
 	/* check that the table exists. */
-	if((CHECK(ret, check_exists_table(table_name)) < 0))
+	if((CHECK(ret, check_exists_table(table_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
 
 	/* Get custom config */
-	if((CHECK(ret, get_custom_config(&config)) < 0))
+	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 	
 	/* Get database name and user id */
-	if((CHECK(ret, get_database_info(db_user, db_name)) < 0))
+	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 		
 	/* update table name into bw_table_list */
-	if((CHECK(ret, update_mapping_table(table_name, true)) < 0))
+	if((CHECK(ret, update_mapping_table(table_name, true))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* check and run the bw process */
-	if((CHECK(ret, control_process(db_name, db_user, hostname, conn_info, &config, MODE_INSERT)) < 0))
+	if((CHECK(ret, control_process(db_name, db_user, hostname, conn_info, &config, MODE_INSERT))) < 0)
 		DB_LOG_RETURN(ERROR, K_FAILED_START, ret);
 
 	/* sync config with kafka connecta */
 	if(strlen(config.consumer))
-		if((CHECK(ret, sync_with_kafka_connect(db_name, NULL, conn_info, &config)) < 0))
-			DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
+		if((CHECK(ret, sync_with_kafka_connect(db_name, NULL, conn_info, &config))) < 0)
+			DB_LOG_RETURN(LOG, K_SUCCESS, ret);
 	
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
@@ -237,29 +257,31 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 	custom_config_t config;
 	int ret = 0;
 
+	CHECKMAXLEN(table_name, NAMEDATALEN);
+
 	/* check that the table exists.*/
-	if((CHECK(ret, check_exists_table(table_name)) < 0))
+	if((CHECK(ret, check_exists_table(table_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
 
 	/* Get database name and user id */
-	if((CHECK(ret, get_database_info(db_user, db_name)) < 0))
+	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* Get custom config */
-	if((CHECK(ret, get_custom_config(&config)) < 0))
+	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* get config from kafka connect */
 	if(strlen(config.consumer))
-		if((CHECK(ret, sync_with_kafka_connect(db_name, table_name, NULL, &config)) < 0))
+		if((CHECK(ret, sync_with_kafka_connect(db_name, table_name, NULL, &config))) < 0)
 			DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
 
 	/* update table name into bw_table_list */
-	if((CHECK(ret, update_mapping_table(table_name, false)) < 0))
+	if((CHECK(ret, update_mapping_table(table_name, false))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* check and send signal to reload conf */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE)) < 0))
+	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL, ret );
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
@@ -280,15 +302,15 @@ pg_resume_ingest(PG_FUNCTION_ARGS)
 	custom_config_t config;
 
 	/* Get custom config */
-	if((CHECK(ret, get_custom_config(&config)) < 0))
+	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* Get database name and user id */
-	if((CHECK(ret, get_database_info(db_user, db_name)) < 0))
+	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* resume process */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, &config, MODE_RESUME)) < 0))
+	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, &config, MODE_RESUME))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL,ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
@@ -307,14 +329,14 @@ pg_suspend_ingest(PG_FUNCTION_ARGS)
 	int ret;
 
 	/* Get database name and user id */
-	if((CHECK(ret, get_database_info(db_user, db_name)) < 0))
+	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* suspend process and delete replication slot */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_SUSPEND)) < 0))
+	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_SUSPEND))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL, ret);
 
-	if((CHECK(ret, remove_replication_slot(db_name)) < 0))
+	if((CHECK(ret, remove_replication_slot(db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_REMOVE_SLOT_ERR, ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
@@ -333,7 +355,7 @@ pg_get_status_ingest(PG_FUNCTION_ARGS)
 	int ret = 0 ;
 
 	/* Get database name and user id */
-	if((CHECK(ret, get_database_info(db_user, db_name)) < 0))
+	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* Check process status */
@@ -357,32 +379,32 @@ pg_create_kafka_connect(PG_FUNCTION_ARGS)
 	char contents[CONTENTSDATALEN] = "";
 	int ret = 0 ;
 	char *conn_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
-
 	custom_config_t config;
 
+	CHECKMAXLEN(conn_name, NAMEDATALEN);
+
 	/* Get custom config */
-	if((CHECK(ret, get_custom_config(&config)) < 0))
+	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	if(!strlen(config.consumer))
 		DB_LOG_RETURN(ERROR, K_KAFKA_CONN_CONFIG, ECONFIG);
 
-	if((CHECK(ret, get_kafka_connect_info(conn_name, contents)) >= 0))
+	if((CHECK(ret, get_kafka_connect_info(conn_name, contents))) >= 0)
 		DB_LOG_RETURN(ERROR, K_EXIST , ret);
 	/* Get default config of Kafka connect */
-	if((CHECK(ret, http_get_kafka_connect(contents, &config)) < 0))
+	if((CHECK(ret, http_get_kafka_connect(contents, &config))) < 0)
 		DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
 
 	/* Generate json data to request creation  */
-	if((CHECK(ret, generate_contents(contents, "name", conn_name)) < 0))
+	if((CHECK(ret, generate_contents(contents, "name", conn_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
-	elog(INFO, "<<<%s>>>",contents);
 	/* Create Kafka connect by connect_name */
-	if((CHECK(ret, http_create_kafka_connect(conn_name, contents, &config)) < 0))
+	if((CHECK(ret, http_create_kafka_connect(conn_name, contents, &config))) < 0)
 		DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
 
-	if((CHECK(ret, update_kafka_conn_info(MODE_INSERT, contents, conn_name)) < 0))
+	if((CHECK(ret, update_kafka_conn_info(MODE_INSERT, contents, conn_name))) < 0)
 		DB_LOG_RETURN(INFO, K_SPI_ERR, ret);
 	DB_LOG_RETURN(INFO, K_SUCCESS , ret);
 }
@@ -398,25 +420,26 @@ pg_delete_kafka_connect(PG_FUNCTION_ARGS)
 	char contents[CONTENTSDATALEN] = "";
 	int ret = 0 ;
 	char *conn_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
-
 	custom_config_t config;
 
+	CHECKMAXLEN(conn_name, NAMEDATALEN);
+
 	/* Get custom config */
-	if((CHECK(ret, get_custom_config(&config)) < 0))
+	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	if(!strlen(config.consumer))
 		DB_LOG_RETURN(ERROR, K_KAFKA_CONN_CONFIG, ECONFIG);
 
 	/* Generate json data to request creation */
-	if((CHECK(ret, get_kafka_connect_info(conn_name, contents)) < 0))
+	if((CHECK(ret, get_kafka_connect_info(conn_name, contents))) < 0)
 		DB_LOG_RETURN(ERROR, K_NOT_EXIST  , ret);
 
 	/* Create Kafka connect by connect_name */
-	if((CHECK(ret, http_delete_kafka_connect(conn_name, contents, &config)) < 0))
+	if((CHECK(ret, http_delete_kafka_connect(conn_name, contents, &config))) < 0)
 		DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
 
-	if((CHECK(ret, update_kafka_conn_info(MODE_DELETE, contents, conn_name)) < 0))
+	if((CHECK(ret, update_kafka_conn_info(MODE_DELETE, contents, conn_name))) < 0)
 		DB_LOG_RETURN(INFO, K_SPI_ERR, ret);
 	DB_LOG_RETURN(INFO, K_SUCCESS , ret);
 }
@@ -472,8 +495,8 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 				if(!strlen(config->consumer))
 					strncpy(conn_name, db_name, NAMEDATALEN-1);
 				else{
-					if((CHECK(ret, get_kafka_connect_info(conn_name, NULL)) < 0))
-						return ret;
+					if((CHECK(ret, get_kafka_connect_info(conn_name, NULL))) < 0)
+						strncpy(conn_name, db_name, NAMEDATALEN-1);
 				}
 
 				snprintf(command, sizeof(command), 
@@ -505,8 +528,7 @@ int	check_exists_table(const char * table_name)
 	char sql[QBUFFLEN];
 	int ret = 0;
     SPI_connect();
-    snprintf(sql, sizeof(sql), "SELECT tablename FROM pg_catalog.pg_tables \
-	WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '%s'", table_name);
+    snprintf(sql, sizeof(sql), CHECK_TABLE_EXISTS, table_name);
     ret = SPI_exec(sql, 1);
 
     if (ret != SPI_OK_SELECT || SPI_tuptable == NULL || SPI_processed <= 0) {
@@ -580,8 +602,7 @@ int get_database_info(char *db_user, char *db_name)
 	char *pdb_user;
 	char *pdb_name;
     SPI_connect();
-    snprintf(sql, sizeof(sql), "select user, current_database() from pg_stat_activity \
-	where pg_stat_activity.pid=pg_backend_pid()");
+    snprintf(sql, sizeof(sql), GET_DATABASE_INFO);
     ret = SPI_exec(sql, 1);
 	if (ret > 0 && SPI_tuptable != NULL && SPI_processed > 0){
 		TupleDesc tupdesc = SPI_tuptable->tupdesc;
@@ -644,8 +665,8 @@ int	get_kafka_connect_info(char *conn_name, char *contents)
 
 	char *pconn_name = NULL, *pcontents = NULL;
     SPI_connect();
-    ret = SPI_exec("SELECT connect_name, contents FROM kafka_con_config", 1);
-    if (ret == SPI_OK_SELECT && SPI_tuptable != NULL && SPI_processed > 0) {
+    ret = SPI_exec(GET_KAFKA_CONN_INFO, 1);
+    if ((ret == SPI_OK_SELECT) && (SPI_tuptable != NULL) && (SPI_processed > 0)) {
 		TupleDesc tupdesc = SPI_tuptable->tupdesc;
 		SPITupleTable *tuptable = SPI_tuptable;
 		HeapTuple tuple = tuptable->vals[0];
@@ -700,9 +721,9 @@ int get_topic_list(const char* conn_name, const char* table_name, char **topics)
 		namelen = strlen(conn_name);
     ret = SPI_connect();
 	if( table_name)
-		snprintf(sql, sizeof(sql), "SELECT table_name FROM tbl_mapps WHERE table_name != '%s'", table_name);
+		snprintf(sql, sizeof(sql), GET_TOPIC_LIST_EXCEPT_PARAM , table_name);
 	else
-		snprintf(sql, sizeof(sql), "SELECT table_name FROM tbl_mapps");
+		snprintf(sql, sizeof(sql), GET_TOPIC_LIST);
     ret = SPI_exec(sql, 0);
 	proc = SPI_processed;
     if (ret == SPI_OK_SELECT && SPI_tuptable != NULL && SPI_processed >= 0) {
@@ -745,9 +766,9 @@ int generate_contents(char *contents, char *key, char *value)
 	char * pcontents = NULL;
     SPI_connect();
 	if(!strcmp(key, "topics"))
-		snprintf(sql, sizeof(sql), "select jsonb_set('%s'::jsonb, '{topics}', '\"%s\"'::jsonb)", contents, value);
+		snprintf(sql, sizeof(sql), GENERATE_TOPICS, contents, value);
 	else if(!strcmp(key, "name"))
-		snprintf(sql, sizeof(sql), "select jsonb_set(('%s'::jsonb-'tasks')::jsonb#-'{\"config\",\"name\"}', '{name}', '\"%s\"'::jsonb)", contents, value);
+		snprintf(sql, sizeof(sql), GENERATE_CONNECT_NAME, contents, value);
 
 	//elog(INFO, "<<<%s>>>",sql);
     ret = SPI_exec(sql, 1);
@@ -863,6 +884,7 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 	char curl_error[CURL_ERROR_SIZE];
 	struct MemoryStruct response;
 	int ret = 0;
+	long http_code = 0;
 	char url[URLLEN];
 
     curl_global_init(CURL_GLOBAL_ALL);
@@ -881,12 +903,18 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
-		ret = -2;
+		ret = EHTTP;
 		goto CLEANUP;
 	}
 
 	if(!contents){
 		ret = EMEM;
+		goto CLEANUP;
+	}
+
+	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if(http_code != 200){
+		ret = EHTTP;
 		goto CLEANUP;
 	}
 
@@ -910,6 +938,7 @@ int http_set_kafka_connect(const char* conn_name, const char *contents, const cu
 	char curl_error[CURL_ERROR_SIZE];
 	char url[URLLEN];
 	int ret = 0;
+	long http_code = 0;
 
     curl_global_init(CURL_GLOBAL_ALL);
 	g_curl = curl_easy_init();
@@ -924,7 +953,13 @@ int http_set_kafka_connect(const char* conn_name, const char *contents, const cu
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
-		ret = -2;
+		ret = EHTTP;
+		goto CLEANUP;
+	}
+
+	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if(http_code != 200){
+		ret = EHTTP;
 		goto CLEANUP;
 	}
 
@@ -944,6 +979,7 @@ int http_create_kafka_connect(const char *conn_name, const char *contents, const
 {
 	char curl_error[CURL_ERROR_SIZE];
 	int ret = 0;
+	long http_code = 0;
 
     curl_global_init(CURL_GLOBAL_ALL);
 	g_curl = curl_easy_init();
@@ -956,7 +992,13 @@ int http_create_kafka_connect(const char *conn_name, const char *contents, const
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
-		ret = -2;
+		ret = EHTTP;
+		goto CLEANUP;
+	}
+
+	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if(http_code != 201){
+		ret = EHTTP;
 		goto CLEANUP;
 	}
 
@@ -976,6 +1018,7 @@ int http_delete_kafka_connect(const char *conn_name, const char *contents, const
 {
 	char curl_error[CURL_ERROR_SIZE];
 	int ret = 0;
+	long http_code = 0;
 	char url[URLLEN];
 
     curl_global_init(CURL_GLOBAL_ALL);
@@ -990,7 +1033,13 @@ int http_delete_kafka_connect(const char *conn_name, const char *contents, const
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
-		ret = -2;
+		ret = EHTTP;
+		goto CLEANUP;
+	}
+
+	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
+	if(http_code != 204){
+		ret = EHTTP;
 		goto CLEANUP;
 	}
 

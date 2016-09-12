@@ -1,16 +1,16 @@
-#define K_TABLE_NOT_EXIST "no such table."
-#define K_NOT_SUPPORT_DBTYPE "not support db type."
-#define K_CHECK_OPERATE "operate 1~7"
-#define K_CHECK_OPTION "allowed only ''"
+#define K_TABLE_NOT_EXIST "No such table."
+#define K_NOT_SUPPORT_DBTYPE "Not support db type.(1 or 2)"
+#define K_CHECK_OPERATE "Check operate type. (operate 1~7)"
+#define K_CHECK_OPTION "Can't parse option."
 
-#define K_EXIST "already exists."
-#define K_NOT_EXIST "not find information"
-#define K_REMOVE_SLOT_ERR "could not remove repl slot"
-#define K_SPI_ERR "could not get database info"
-#define K_FAILED_START "could not start process for repl"
-#define K_EVENT_FAIL "could not send event to process"
-#define K_KAFKA_CONN_ERR "could not synchronize with kafka connect"
-#define K_KAFKA_CONN_CONFIG "check config of kafka connect"
+#define K_EXIST "Already exists."
+#define K_NOT_EXIST "Can't find data."
+#define K_REMOVE_SLOT_ERR "Can't remove repl slot"
+#define K_SPI_ERR "Database error"
+#define K_FAILED_START "Can't start to repl"
+#define K_EVENT_FAIL "Can't send signal to process"
+#define K_KAFKA_CONN_ERR "Can't connect to kafka connect"
+#define K_KAFKA_CONN_CONFIG "Check kafka connect URL"
 
 #define K_UNKNOWN_ERROR "unknown error"
 #define K_INTERNAL_ERROR "internal error"
@@ -27,6 +27,7 @@
 #define EMEM -5
 #define ECONFIG -4
 #define ENEXIST -3
+#define EHTTP -2
 #define EUKNOWN -1
 
 #define ECONSUMER 10
