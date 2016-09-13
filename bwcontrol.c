@@ -96,12 +96,21 @@ void _PG_fini(void);
 #define INVALID_PID (-1)
 
 #define CONTENT_TYPE "application/json"
-#define DEFAULTURL "dstatus efault-config"
 
+/* ------------------------------------------------
+ * define queries 						
+ * ------------------------------------------------*/
 #define CHECK_TABLE_EXISTS "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '%s'"
 #define GET_DATABASE_INFO "select user, current_database() from pg_stat_activity where pg_stat_activity.pid=pg_backend_pid()"
-#define GET_REPLICATION_SETTING "select current_setting('bw.bwpath'), current_setting('bw.kafka_broker'), current_setting('bw.schema_registry'), current_setting('bw.consumer')"
-#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
+#define GET_REPLICATION_SETTING "select current_setting('bw.bwpath') bwpath, current_setting('bw.kafka_broker') kafka_broker, current_setting('bw.schema_registry') schema_registry, current_setting('bw.consumer') consumer, current_setting('bw.consumer_sub') consumer_sub"
+//#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
+#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps (database_name, table_schema, table_name, relnamespace, reloid, topic_name, create_date, create_user, remark) \
+SELECT A.table_catalog database_name, A.table_schema, \
+A.table_name, B.relnamespace, B.oid reloid, \
+A.table_catalog || '-' || A.table_name as topic_name, \
+now() create_date, current_user create_user, '' remark \
+FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname \
+where table_name='%s' and not exists (select 1 from tbl_mapps C where C.table_name = '%s');"
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
@@ -116,10 +125,11 @@ void _PG_fini(void);
  * structures 						
  * ------------------------------------------------*/
 typedef struct custom_config{
-	char bwpath[MAXPGPATH];			/* Postgres transaction identifier */
-	char broker[URLLEN];           /* Number of row-level events received */
-	char schema_registry[URLLEN];  /* Number of row-level events waiting */
-	char consumer[URLLEN];         /* WAL position of the transaction's commit event */
+	char bwpath[MAXPGPATH];		   /* Bottledwater intalled path */
+	char broker[URLLEN];           /* Kafka broker URL */
+	char schema_registry[URLLEN];  /* Schema Registry URL */
+	char consumer[URLLEN];         /* Kafka connect URL */
+	char consumer_sub[URLLEN]; /* Kafka connect sub URL for default config */
 } custom_config_t;
 
 struct MemoryStruct {
@@ -550,7 +560,7 @@ int update_mapping_table(const char * table_name, bool operation)
     SPI_connect();
 
 	if(operation)
-		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name);
+		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, table_name);
 	else
 		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, table_name);
 
@@ -645,6 +655,8 @@ int get_custom_config(custom_config_t *pconfig)
 		strncpy(pconfig->broker, SPI_getvalue(tuple, tupdesc, 2), URLLEN-1);
 		strncpy(pconfig->schema_registry, SPI_getvalue(tuple, tupdesc, 3), URLLEN-1);
 		strncpy(pconfig->consumer, SPI_getvalue(tuple, tupdesc, 4), URLLEN-1);
+		strncpy(pconfig->consumer_sub, SPI_getvalue(tuple, tupdesc, 5), URLLEN-1);
+
 		SPI_finish();
 	}
 	else {
@@ -704,7 +716,7 @@ int update_kafka_conn_info(unsigned char mode, const char *contents, const char 
 		snprintf(sql, sizeof(sql), DELETE_KAFKA_CONFIG);
 	ret = SPI_exec(sql, 1);
 	SPI_finish();
-	if (ret != SPI_OK_INSERT && ret != SPI_OK_UPDATE && SPI_OK_DELETE)
+	if (ret != SPI_OK_INSERT && ret != SPI_OK_UPDATE && ret != SPI_OK_DELETE)
 		ret = ESPI;
 	return ret;
 }
@@ -895,7 +907,7 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 	response.memory = malloc(1);
 	response.size = 0;
 
-	snprintf(url, URLLEN-1, "%s/%s/", config->consumer, DEFAULTURL);
+	snprintf(url, URLLEN-1, "%s/%s/", config->consumer, config->consumer_sub);
 	curl_easy_setopt(g_curl, CURLOPT_URL, url);
 	curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_curl_headers);
 	curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, response_cb);
