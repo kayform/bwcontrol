@@ -96,6 +96,7 @@ void _PG_fini(void);
 #define INVALID_PID (-1)
 
 #define CONTENT_TYPE "application/json"
+#define HTTP_TIMOUT 3
 
 /* ------------------------------------------------
  * define queries 						
@@ -913,6 +914,7 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 	curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, response_cb);
 	curl_easy_setopt(g_curl, CURLOPT_WRITEDATA, (void*)&response);
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
+	curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, HTTP_TIMOUT);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
@@ -963,6 +965,7 @@ int http_set_kafka_connect(const char* conn_name, const char *contents, const cu
     curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, contents);
 	curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_curl_headers);
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
+	curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, HTTP_TIMOUT);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
@@ -985,7 +988,7 @@ CLEANUP:
 }
 
 /*----------------------------
- * POST Request to create instance of K.C
+ * POST : Create instance request to K.C
  *---------------------------- */
 int http_create_kafka_connect(const char *conn_name, const char *contents, const custom_config_t *config)
 {
@@ -1002,6 +1005,7 @@ int http_create_kafka_connect(const char *conn_name, const char *contents, const
 	curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_curl_headers);
     curl_easy_setopt(g_curl, CURLOPT_POSTFIELDS, contents);
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
+	curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, HTTP_TIMOUT);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
@@ -1043,6 +1047,7 @@ int http_delete_kafka_connect(const char *conn_name, const char *contents, const
 	curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_curl_headers);
 	curl_easy_setopt(g_curl, CURLOPT_CUSTOMREQUEST, "DELETE");
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
+	curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, HTTP_TIMOUT);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
