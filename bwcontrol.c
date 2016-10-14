@@ -120,7 +120,7 @@ where table_name='%s' and not exists (select 1 from tbl_mapps C where C.table_na
 #define GET_TOPIC_LIST_EXCEPT_PARAM "SELECT table_name FROM tbl_mapps WHERE table_name != '%s'"
 #define GET_TOPIC_LIST "SELECT table_name FROM tbl_mapps"
 #define GENERATE_TOPICS "select jsonb_set('%s'::jsonb, '{topics}', '\"%s\"'::jsonb)"
-#define GENERATE_CONNECT_NAME "select jsonb_set(('%s'::jsonb-'tasks')::jsonb#-'{\"config\",\"name\"}', '{name}', '\"%s\"'::jsonb)"
+#define GENERATE_CONNECT_NAME "select jsonb_set(f1,'{\"config\", \"hdfs.url\"}', f2::jsonb) from (select result f1, to_json((result::json->>'config')::json->>'hdfs.url'||'%s') f2 from jsonb_set(('%s'::jsonb-'tasks')::jsonb#-'{\"config\",\"name\"}', '{name}', '\"%s\"'::jsonb) result) result2"
 
 /* ------------------------------------------------
  * structures 						
@@ -511,7 +511,7 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 				}
 
 				snprintf(command, sizeof(command), 
-						"nohup %s --postgres=%s://127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s 1>/dev/null 2>&1 &",
+						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s --allow-unkeyed 1>/dev/null 2>&1 &",
 						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name);
 			//	snprintf(command, sizeof(command), "nohup /home/postgres/install/bottledwater-pg-master/kafka/bottledwater --postgres=postgres://localhost/protoavro --slot=protoavro --broker=K4M-KAFKA-1:9092 --schema-registry=http://K4M-KAFKA-1:8081 1>/dev/null/ 2>&1 &");
 				CHECK_RETURN(ret, spawn_bw_process(command));
@@ -781,7 +781,7 @@ int generate_contents(char *contents, char *key, char *value)
 	if(!strcmp(key, "topics"))
 		snprintf(sql, sizeof(sql), GENERATE_TOPICS, contents, value);
 	else if(!strcmp(key, "name"))
-		snprintf(sql, sizeof(sql), GENERATE_CONNECT_NAME, contents, value);
+		snprintf(sql, sizeof(sql), GENERATE_CONNECT_NAME, value, contents, value);
 
 	//elog(INFO, "<<<%s>>>",sql);
     ret = SPI_exec(sql, 1);
