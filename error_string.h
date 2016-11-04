@@ -33,7 +33,6 @@
 #define ENEXIST (-3)
 #define EHTTP (-2)
 #define EUKNOWN (-1)
-
 #define ECONSUMER (10)
 
 #endif /* _ERROR_STRING_H_ */
