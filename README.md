@@ -148,7 +148,6 @@ pg_delete_kafka_connect(text connect_name)
 
 License
 =======
-
 > bwcontrol is released under the PostgreSQL License, a liberal Open Source license, similar to the BSD or MIT licenses.
 
 > Copyright 2016 K4M, Inc. All rights reserved.
