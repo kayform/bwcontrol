@@ -1,3 +1,7 @@
+#ifndef _ERROR_STRING_H_
+
+#define _ERROR_STRING_H_
+
 #define K_TABLE_NOT_EXIST "No such table."
 #define K_NOT_SUPPORT_DBTYPE "Not support db type.(1 or 2)"
 #define K_CHECK_OPERATE "Check operate type. (operate 1~7)"
@@ -21,13 +25,15 @@
 #define K_PROC_WORKING "Process is running"
 
 /* Error define */
-#define ESPI -8
-#define ERUN -7
-#define ELEN -6
-#define EMEM -5
-#define ECONFIG -4
-#define ENEXIST -3
-#define EHTTP -2
-#define EUKNOWN -1
+#define ESPI (-8)
+#define ERUN (-7)
+#define ELEN (-6)
+#define EMEM (-5)
+#define ECONFIG (-4)
+#define ENEXIST (-3)
+#define EHTTP (-2)
+#define EUKNOWN (-1)
 
-#define ECONSUMER 10
+#define ECONSUMER (10)
+
+#endif /* _ERROR_STRING_H_ */
