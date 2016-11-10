@@ -169,25 +169,25 @@ static struct curl_slist *g_curl_headers = NULL;
 /* ------------------------------------------------
  * Startup
  * ------------------------------------------------*/
-void _PG_init(void)
-{
-//    curl_global_init(CURL_GLOBAL_ALL);
-}
+//void _PG_init(void)
+//{
+////    curl_global_init(CURL_GLOBAL_ALL);
+//}
 
 /* ------------------------------------------------
  * Shutdown
  * ------------------------------------------------*/
-void _PG_fini(void)
-{
-//    if ( g_curl )
-//    {
-//		curl_slist_free_all(g_curl_headers);
-//        curl_easy_cleanup(g_curl);
-//        g_curl = NULL;
-//    }
-//
-//    curl_global_cleanup();
-}
+//void _PG_fini(void)
+//{
+////    if ( g_curl )
+////    {
+////		curl_slist_free_all(g_curl_headers);
+////        curl_easy_cleanup(g_curl);
+////        g_curl = NULL;
+////    }
+////
+////    curl_global_cleanup();
+//}
 
 /* ------------------------------------------------
  * pg_add_ingest_table().
@@ -203,9 +203,9 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	char *conn_info = text_to_cstring(PG_GETARG_TEXT_PP(3));
 	custom_config_t config;
 
-	char db_user[NAMEDATALEN]="";
-	char db_name[NAMEDATALEN]="";
-	char hostname[NAMEDATALEN]="";
+	char db_user[NAMEDATALEN];
+	char db_name[NAMEDATALEN];
+	char hostname[NAMEDATALEN];
 	int ret = 0;
 
 	/* Check parameters */
@@ -263,8 +263,8 @@ Datum
 pg_del_ingest_table(PG_FUNCTION_ARGS)
 {
 	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	char db_user[NAMEDATALEN]="";
-	char db_name[NAMEDATALEN]="";
+	char db_user[NAMEDATALEN];
+	char db_name[NAMEDATALEN];
 	custom_config_t config;
 	int ret = 0;
 
@@ -306,8 +306,8 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 Datum
 pg_resume_ingest(PG_FUNCTION_ARGS)
 {
-	char db_user[NAMEDATALEN]="";
-	char db_name[NAMEDATALEN]="";
+	char db_user[NAMEDATALEN];
+	char db_name[NAMEDATALEN];
 	int ret;
 
 	custom_config_t config;
@@ -335,8 +335,8 @@ pg_resume_ingest(PG_FUNCTION_ARGS)
 Datum
 pg_suspend_ingest(PG_FUNCTION_ARGS)
 {
-	char db_user[NAMEDATALEN]="";
-	char db_name[NAMEDATALEN]="";
+	char db_user[NAMEDATALEN];
+	char db_name[NAMEDATALEN];
 	int ret;
 
 	/* Get database name and user id */
@@ -361,8 +361,8 @@ pg_suspend_ingest(PG_FUNCTION_ARGS)
 Datum
 pg_get_status_ingest(PG_FUNCTION_ARGS)
 {
-	char db_user[NAMEDATALEN]="";
-	char db_name[NAMEDATALEN]="";
+	char db_user[NAMEDATALEN];
+	char db_name[NAMEDATALEN];
 	int ret = 0 ;
 
 	/* Get database name and user id */
@@ -387,7 +387,7 @@ pg_get_status_ingest(PG_FUNCTION_ARGS)
 Datum
 pg_create_kafka_connect(PG_FUNCTION_ARGS)
 {
-	char contents[CONTENTSDATALEN] = "";
+	char contents[CONTENTSDATALEN];
 	int ret = 0 ;
 	char *conn_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	custom_config_t config;
@@ -466,7 +466,6 @@ int check_bw_process(const char* db_name)
 	FILE  *pidfp = NULL;
 	struct stat st;
 
-	memset(tmppath, 0x00, sizeof(tmppath));
 	snprintf(tmppath, sizeof(tmppath)-1, "/tmp/bw_%s.pid", db_name);
 
 	if ((pidfp = fopen(tmppath, "r")) == NULL){
@@ -495,8 +494,8 @@ int check_bw_process(const char* db_name)
 int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode)
 {
 	int ret = 0;
-	char conn_name[NAMEDATALEN] = "";
-	char command[MAXPGPATH] = "";
+	char conn_name[NAMEDATALEN];
+	char command[MAXPGPATH];
 	pid_t pid = check_bw_process(db_name);
 	if(pid <= 0) {
 		switch (mode){
@@ -918,23 +917,33 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
-		goto CLEANUP;
+		xfree(response.memory);
+		curl_slist_free_all(g_curl_headers);
+		curl_easy_cleanup(g_curl);
+		g_curl_headers = NULL;
+        g_curl = NULL;
+        curl_global_cleanup();
+		return ret;
 	}
+
+	strncpy(contents, response.memory, CONTENTSDATALEN-1);
 
 	if(!contents){
 		ret = EMEM;
-		goto CLEANUP;
+		xfree(response.memory);
+		curl_slist_free_all(g_curl_headers);
+		curl_easy_cleanup(g_curl);
+		g_curl_headers = NULL;
+        g_curl = NULL;
+        curl_global_cleanup();
+		return ret;
 	}
 
 	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if(http_code != 200){
 		ret = EHTTP;
-		goto CLEANUP;
 	}
 
-	strncpy(contents, response.memory, CONTENTSDATALEN-1);
-
-CLEANUP:
 	xfree(response.memory);
 	curl_slist_free_all(g_curl_headers);
 	curl_easy_cleanup(g_curl);
@@ -969,16 +978,19 @@ int http_set_kafka_connect(const char* conn_name, const char *contents, const cu
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
-		goto CLEANUP;
+		curl_slist_free_all(g_curl_headers);
+		curl_easy_cleanup(g_curl);
+		g_curl_headers = NULL;
+        g_curl = NULL;
+        curl_global_cleanup();
+		return ret;
 	}
 
 	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if(http_code != 200){
 		ret = EHTTP;
-		goto CLEANUP;
 	}
 
-CLEANUP:
 	curl_slist_free_all(g_curl_headers);
 	curl_easy_cleanup(g_curl);
 	g_curl_headers = NULL;
@@ -1009,16 +1021,19 @@ int http_create_kafka_connect(const char *conn_name, const char *contents, const
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
-		goto CLEANUP;
+		curl_slist_free_all(g_curl_headers);
+		curl_easy_cleanup(g_curl);
+		g_curl_headers = NULL;
+        g_curl = NULL;
+        curl_global_cleanup();
+		return ret;
 	}
 
 	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if(http_code != 201){
 		ret = EHTTP;
-		goto CLEANUP;
 	}
 
-CLEANUP:
 	curl_slist_free_all(g_curl_headers);
 	curl_easy_cleanup(g_curl);
 	g_curl_headers = NULL;
@@ -1051,16 +1066,19 @@ int http_delete_kafka_connect(const char *conn_name, const char *contents, const
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
-		goto CLEANUP;
+		curl_slist_free_all(g_curl_headers);
+		curl_easy_cleanup(g_curl);
+		g_curl_headers = NULL;
+        g_curl = NULL;
+        curl_global_cleanup();
+		return ret;
 	}
 
 	curl_easy_getinfo(g_curl, CURLINFO_RESPONSE_CODE, &http_code);
 	if(http_code != 204){
 		ret = EHTTP;
-		goto CLEANUP;
 	}
 
-CLEANUP:
 	curl_slist_free_all(g_curl_headers);
 	curl_easy_cleanup(g_curl);
 	g_curl_headers = NULL;
