@@ -739,7 +739,7 @@ int get_topic_list(const char* conn_name, const char* table_name, char **topics)
     ret = SPI_exec(sql, 0);
 	proc = SPI_processed;
     if (ret == SPI_OK_SELECT && SPI_tuptable != NULL && SPI_processed >= 0) {
-		if (SPI_tuptable != NULL) {
+		if (proc > 0) {
 			TupleDesc tupdesc = SPI_tuptable->tupdesc;
 			SPITupleTable *tuptable = SPI_tuptable;
 			HeapTuple tuple;
@@ -778,7 +778,7 @@ int generate_contents(char *contents, char *key, char *value)
 	char * pcontents = NULL;
     SPI_connect();
 	if(!strcmp(key, "topics"))
-		snprintf(sql, sizeof(sql), GENERATE_TOPICS, contents, value);
+		snprintf(sql, sizeof(sql), GENERATE_TOPICS, contents, value ? value : "");
 	else if(!strcmp(key, "name"))
 		snprintf(sql, sizeof(sql), GENERATE_CONNECT_NAME, value, contents, value);
 
