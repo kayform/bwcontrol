@@ -428,7 +428,7 @@ pg_create_kafka_connect(PG_FUNCTION_ARGS)
 Datum
 pg_delete_kafka_connect(PG_FUNCTION_ARGS)
 {
-	char contents[CONTENTSDATALEN] = "";
+	char contents[CONTENTSDATALEN];
 	int ret = 0 ;
 	char *conn_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	custom_config_t config;
@@ -464,7 +464,7 @@ int check_bw_process(const char* db_name)
 	char tmppath[MAXPGPATH];	
 	char pidbuf[32];
 	FILE  *pidfp = NULL;
-	struct stat st;
+//	struct stat st;
 
 	snprintf(tmppath, sizeof(tmppath)-1, "/tmp/bw_%s.pid", db_name);
 
@@ -476,15 +476,15 @@ int check_bw_process(const char* db_name)
 		fclose(pidfp);
 		return -1; //abnormal state - process started abnormally
 	}
-
-	snprintf(tmppath, sizeof(tmppath), "/proc/%s/status", pidbuf);
-
-	if(stat(tmppath, &st)){
-		fclose(pidfp);
-		return -1; //abnormal state
-	}
+	
 	fclose(pidfp);
-	return atoi(pidbuf);
+	snprintf(tmppath, sizeof(tmppath), "/proc/%s/status", pidbuf);
+	
+	if((pidfp = fopen(tmppath, "r"))){
+		fclose(pidfp);
+		return atoi(pidbuf);
+	}
+	return -1;	
 }
 
 /* ----------------------------
@@ -502,11 +502,11 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 		case MODE_INSERT:
 		case MODE_RESUME:
 			if(pid<=0){ //process is not running
-				if(!strlen(config->consumer))
-					strncpy(conn_name, db_name, NAMEDATALEN-1);
+				if(!strlen(config->consumer)){
+					if(strlen(db_name) < NAMEDATALEN) strcpy(conn_name, db_name);}
 				else{
 					if((CHECK(ret, get_kafka_connect_info(conn_name, NULL))) < 0)
-						strncpy(conn_name, db_name, NAMEDATALEN-1);
+						if(strlen(db_name) < NAMEDATALEN) strcpy(conn_name, db_name);
 				}
 
 				snprintf(command, sizeof(command), 
@@ -524,7 +524,7 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 		if(mode == MODE_SUSPEND)
 			kill(pid, SIGTERM); //send signal to process - reload configuration 
 		else{
-			kill(pid, SIGUSR2); //send signal to process - reload configuration 
+			kill(pid, SIGQUIT); //send signal to process - reload configuration 
 		}
 	}
 	return 0;
@@ -622,8 +622,8 @@ int get_database_info(char *db_user, char *db_name)
 
 		pdb_user = SPI_getvalue(tuple, tupdesc, 1);
 		pdb_name = SPI_getvalue(tuple, tupdesc, 2);
-		strncpy(db_user, pdb_user, NAMEDATALEN-1);
-		strncpy(db_name, pdb_name, NAMEDATALEN-1);
+		if(strlen(pdb_user) < NAMEDATALEN) strcpy(db_user, pdb_user);
+		if(strlen(pdb_name) < NAMEDATALEN) strcpy(db_name, pdb_name);
 		xpfree(pdb_user);
 		xpfree(pdb_name);
 	}
@@ -686,9 +686,9 @@ int	get_kafka_connect_info(char *conn_name, char *contents)
 		pconn_name= SPI_getvalue(tuple, tupdesc, 1);
 		pcontents = SPI_getvalue(tuple, tupdesc, 2);
 		if(conn_name)
-			strncpy(conn_name, pconn_name, NAMEDATALEN-1);
+			if(strlen(pconn_name) < NAMEDATALEN) strcpy(conn_name, pconn_name);
 		if(contents)
-			strncpy(contents, pcontents, CONTENTSDATALEN-1);
+			if(strlen(pcontents) < CONTENTSDATALEN) strcpy(contents, pcontents);
 		xpfree(pconn_name);
 		xpfree(pcontents);
 	}
@@ -796,7 +796,7 @@ int generate_contents(char *contents, char *key, char *value)
 		if(len >= CONTENTSDATALEN)
 			ret = ELEN;
 		else {
-			strncpy(contents, pcontents, CONTENTSDATALEN-1);
+			if(strlen(pcontents) < CONTENTSDATALEN) strcpy(contents, pcontents);
 		}
 		xpfree(pcontents);
 	}
@@ -904,7 +904,7 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
 	g_curl_headers = curl_slist_append(NULL, "Content-Type: " CONTENT_TYPE);
 	g_curl_headers = curl_slist_append(g_curl_headers, "Accept: " CONTENT_TYPE);
 
-	response.memory = malloc(1);
+	response.memory = malloc(2);
 	response.size = 0;
 
 	snprintf(url, URLLEN-1, "%s/%s/", config->consumer, config->consumer_sub);
@@ -925,8 +925,8 @@ int http_get_kafka_connect(char *contents, const custom_config_t *config)
         curl_global_cleanup();
 		return ret;
 	}
-
-	strncpy(contents, response.memory, CONTENTSDATALEN-1);
+	if(strlen(response.memory) < CONTENTSDATALEN)
+		strcpy(contents, response.memory);
 
 	if(!contents){
 		ret = EMEM;

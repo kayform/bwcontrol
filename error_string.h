@@ -1,6 +1,6 @@
-#ifndef _ERROR_STRING_H_
+#ifndef ERROR_STRING_H_
 
-#define _ERROR_STRING_H_
+#define ERROR_STRING_H_
 
 #define K_TABLE_NOT_EXIST "No such table."
 #define K_NOT_SUPPORT_DBTYPE "Not support db type.(1 or 2)"
@@ -35,4 +35,4 @@
 #define EUKNOWN (-1)
 #define ECONSUMER (10)
 
-#endif /* _ERROR_STRING_H_ */
+#endif /* ERROR_STRING_H_ */
