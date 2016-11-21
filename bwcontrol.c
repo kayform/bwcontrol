@@ -108,7 +108,7 @@ void _PG_fini(void);
 #define INSERT_MAP_TABLE "INSERT INTO tbl_mapps (database_name, table_schema, table_name, relnamespace, reloid, topic_name, create_date, create_user, remark) \
 SELECT A.table_catalog database_name, A.table_schema, \
 A.table_name, B.relnamespace, B.oid reloid, \
-A.table_catalog || '-' || A.table_name as topic_name, \
+A.table_catalog || '.' || A.table_name as topic_name, \
 now() create_date, current_user create_user, '' remark \
 FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname \
 where table_name='%s' and not exists (select 1 from tbl_mapps C where C.table_name = '%s');"
