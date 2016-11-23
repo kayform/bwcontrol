@@ -105,15 +105,18 @@ void _PG_fini(void);
 #define GET_DATABASE_INFO "select user, current_database() from pg_stat_activity where pg_stat_activity.pid=pg_backend_pid()"
 #define GET_REPLICATION_SETTING "select current_setting('bw.bwpath') bwpath, current_setting('bw.kafka_broker') kafka_broker, current_setting('bw.schema_registry') schema_registry, current_setting('bw.consumer') consumer, current_setting('bw.consumer_sub') consumer_sub"
 //#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
+// If the Postgres schema name is 'public', we just set topic_name with the table_name.
+// schema  = 'public' : topic_name = table name
+// schema != 'public' : topic_name = table_schema.table name
 #define INSERT_MAP_TABLE "INSERT INTO tbl_mapps (database_name, table_schema, table_name, relnamespace, reloid, topic_name, create_date, create_user, remark) \
 SELECT A.table_catalog database_name, A.table_schema, \
 A.table_name, B.relnamespace, B.oid reloid, \
-A.table_schema || '.' || A.table_name as topic_name, \
+(select case when A.table_schema = 'public' then A.table_name else A.table_schema || '.' || A.table_name end) as topic_name, \
 now() create_date, current_user create_user, '' remark \
 FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname \
 where table_name='%s' and A.table_schema = '%s' \
 and B.oid = (SELECT '%s.%s'::regclass::oid) \
-and not exists (select 1 from tbl_mapps C where C.table_name = '%s');"
+and not exists (select 1 from tbl_mapps C where C.table_name = '%s' and C.table_schema = '%s');"
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_schema = '%s' and table_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
@@ -566,7 +569,7 @@ int update_mapping_table(const char * schema_name, const char * table_name, bool
     SPI_connect();
 
 	if(operation)
-		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, schema_name, schema_name, table_name, table_name);
+		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, schema_name, schema_name, table_name, table_name, schema_name);
 	else
 		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, schema_name, table_name);
 
