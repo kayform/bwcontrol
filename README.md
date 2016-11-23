@@ -64,14 +64,15 @@ Examples
 ========
 
 calling functions via SQL.
+
 1. Create connection with Kafka-connect to synchronize whithlisting of table.
 	testdb=# pg_create_kafka_connect("testconnection");
 	INFO:  Success(0)
 2. Make whitelisting of table.
-	testdb=# pg_add_ingest_table("testtable", 1, 1, '');
+	testdb=# pg_add_ingest_table("myschema", "testtable", 1, 1, '');
 	INFO:  Success(0)
 3. Remove table from whitelist to except sync with Kafka-connect.
-	testdb=# pg_del_ingest_table("testtable");
+	testdb=# pg_del_ingest_table("myschema", "testtable");
 	INFO:  Success(0)
 4. Check status (bwttledwater, replication_slot, kafka connect, whitelist).
 	testdb=# select pg_get_status_ingest();
