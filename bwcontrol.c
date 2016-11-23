@@ -101,24 +101,26 @@ void _PG_fini(void);
 /* ------------------------------------------------
  * define queries 						
  * ------------------------------------------------*/
-#define CHECK_TABLE_EXISTS "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname != 'pg_catalog' AND schemaname != 'information_schema' AND tablename = '%s'"
+#define CHECK_TABLE_EXISTS "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = '%s' AND tablename = '%s'"
 #define GET_DATABASE_INFO "select user, current_database() from pg_stat_activity where pg_stat_activity.pid=pg_backend_pid()"
 #define GET_REPLICATION_SETTING "select current_setting('bw.bwpath') bwpath, current_setting('bw.kafka_broker') kafka_broker, current_setting('bw.schema_registry') schema_registry, current_setting('bw.consumer') consumer, current_setting('bw.consumer_sub') consumer_sub"
 //#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
 #define INSERT_MAP_TABLE "INSERT INTO tbl_mapps (database_name, table_schema, table_name, relnamespace, reloid, topic_name, create_date, create_user, remark) \
 SELECT A.table_catalog database_name, A.table_schema, \
 A.table_name, B.relnamespace, B.oid reloid, \
-A.table_catalog || '.' || A.table_name as topic_name, \
+A.table_schema || '.' || A.table_name as topic_name, \
 now() create_date, current_user create_user, '' remark \
 FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname \
-where table_name='%s' and not exists (select 1 from tbl_mapps C where C.table_name = '%s');"
-#define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_name = '%s'"
+where table_name='%s' and A.table_schema = '%s' \
+and B.oid = (SELECT '%s.%s'::regclass::oid) \
+and not exists (select 1 from tbl_mapps C where C.table_name = '%s');"
+#define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_schema = '%s' and table_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
 #define DELETE_KAFKA_CONFIG "DELETE from kafka_con_config"
 #define GET_KAFKA_CONN_INFO "SELECT connect_name, contents FROM kafka_con_config"
-#define GET_TOPIC_LIST_EXCEPT_PARAM "SELECT table_name FROM tbl_mapps WHERE table_name != '%s'"
-#define GET_TOPIC_LIST "SELECT table_name FROM tbl_mapps"
+#define GET_TOPIC_LIST_EXCEPT_PARAM "SELECT topic_name FROM tbl_mapps WHERE table_name != '%s'"
+#define GET_TOPIC_LIST "SELECT topic_name FROM tbl_mapps"
 #define GENERATE_TOPICS "select jsonb_set('%s'::jsonb, '{topics}', '\"%s\"'::jsonb)"
 #define GENERATE_CONNECT_NAME "select jsonb_set(f1,'{\"config\", \"hdfs.url\"}', f2::jsonb) from (select result f1, to_json((result::json->>'config')::json->>'hdfs.url'||'%s') f2 from jsonb_set(('%s'::jsonb-'tasks')::jsonb#-'{\"config\",\"name\"}', '{name}', '\"%s\"'::jsonb) result) result2"
 
@@ -143,10 +145,10 @@ struct MemoryStruct {
  * ------------------------------------------------*/
 int check_bw_process(const char* db_name);
 int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode);
-int check_exists_table(const char * table_name);
+int check_exists_table(const char * schema_name, const char * table_name);
 int	get_kafka_connect_info(char* conn_name, char *contents);
 int remove_replication_slot(const char* db_name);
-int update_mapping_table(const char * table_name, bool operation);
+int update_mapping_table(const char * schema_name, const char * table_name, bool operation);
 int get_database_info(char *db_user, char *db_name);
 int get_custom_config(custom_config_t *pconfig);
 static size_t response_cb(void *contents, size_t size, size_t nmemb, void *userp);
@@ -197,10 +199,11 @@ static struct curl_slist *g_curl_headers = NULL;
 Datum
 pg_add_ingest_table(PG_FUNCTION_ARGS)
 {
-	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
-	int ndbtype  = PG_GETARG_INT32(1);
-	int noperate = PG_GETARG_INT32(2);
-	char *conn_info = text_to_cstring(PG_GETARG_TEXT_PP(3));
+	char *schema_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	int ndbtype  = PG_GETARG_INT32(2);
+	int noperate = PG_GETARG_INT32(3);
+	char *conn_info = text_to_cstring(PG_GETARG_TEXT_PP(4));
 	custom_config_t config;
 
 	char db_user[NAMEDATALEN];
@@ -219,6 +222,7 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(ERROR, K_CHECK_OPERATE, ret);
 
 	CHECKMAXLEN(table_name, NAMEDATALEN);
+	CHECKMAXLEN(schema_name , NAMEDATALEN);
 	CHECKMAXLEN(conn_info, OPTLEN );
 
 	/* check option.  to do ..*/
@@ -226,7 +230,7 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(ERROR, K_CHECK_OPTION, ret);
 
 	/* check that the table exists. */
-	if((CHECK(ret, check_exists_table(table_name))) < 0)
+	if((CHECK(ret, check_exists_table(schema_name, table_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
 
 	/* Get custom config */
@@ -238,7 +242,7 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 		
 	/* update table name into bw_table_list */
-	if((CHECK(ret, update_mapping_table(table_name, true))) < 0)
+	if((CHECK(ret, update_mapping_table(schema_name, table_name, true))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* check and run the bw process */
@@ -262,16 +266,18 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 Datum
 pg_del_ingest_table(PG_FUNCTION_ARGS)
 {
-	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *schema_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
 	char db_user[NAMEDATALEN];
 	char db_name[NAMEDATALEN];
 	custom_config_t config;
 	int ret = 0;
 
 	CHECKMAXLEN(table_name, NAMEDATALEN);
+	CHECKMAXLEN(schema_name, NAMEDATALEN);
 
 	/* check that the table exists.*/
-	if((CHECK(ret, check_exists_table(table_name))) < 0)
+	if((CHECK(ret, check_exists_table(schema_name, table_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
 
 	/* Get database name and user id */
@@ -288,7 +294,7 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 			DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
 
 	/* update table name into bw_table_list */
-	if((CHECK(ret, update_mapping_table(table_name, false))) < 0)
+	if((CHECK(ret, update_mapping_table(schema_name, table_name, false))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* check and send signal to reload conf */
@@ -533,12 +539,12 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 /*----------------------------
  * Check user input table name.
  *---------------------------- */
-int	check_exists_table(const char * table_name)
+int	check_exists_table(const char * schema_name, const char * table_name)
 {
 	char sql[QBUFFLEN];
 	int ret = 0;
     SPI_connect();
-    snprintf(sql, sizeof(sql), CHECK_TABLE_EXISTS, table_name);
+    snprintf(sql, sizeof(sql), CHECK_TABLE_EXISTS, schema_name, table_name);
     ret = SPI_exec(sql, 1);
 
     if (ret != SPI_OK_SELECT || SPI_tuptable == NULL || SPI_processed <= 0) {
@@ -552,7 +558,7 @@ int	check_exists_table(const char * table_name)
 /*----------------------------
  * Add/Delete replication tables.
  *---------------------------- */
-int update_mapping_table(const char * table_name, bool operation)
+int update_mapping_table(const char * schema_name, const char * table_name, bool operation)
 {
 	char sql[QBUFFLEN];
 	int i = 0;
@@ -560,9 +566,9 @@ int update_mapping_table(const char * table_name, bool operation)
     SPI_connect();
 
 	if(operation)
-		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, table_name);
+		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, schema_name, schema_name, table_name, table_name);
 	else
-		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, table_name);
+		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, schema_name, table_name);
 
     ret = SPI_exec(sql, 1);
 	if(ret != SPI_OK_DELETE && ret != SPI_OK_INSERT){

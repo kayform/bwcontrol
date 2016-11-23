@@ -140,8 +140,8 @@ Dropping ...
 SQL functions
 -------------
 
-pg_add_ingest_table(text table_name, int bigdata_type, int operation_type, text remark);
-pg_del_ingest_table(text table_name)
+pg_add_ingest_table(text table_schema, text table_name, int bigdata_type, int operation_type, text remark);
+pg_del_ingest_table(text table_schema, text table_name)
 pg_resume_ingest()
 pg_suspend_ingest()
 pg_get_status_ingest()
