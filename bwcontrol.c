@@ -302,7 +302,7 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 
 	/* check and send signal to reload conf */
 	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE))) < 0)
-		DB_LOG_RETURN(ERROR, K_EVENT_FAIL, ret );
+		DB_LOG_RETURN(INFO, K_EVENT_FAIL, ret );
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
