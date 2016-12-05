@@ -9,12 +9,8 @@
 #include <unistd.h>
 #include <curl/curl.h>
 #include <string.h>
-#include <jansson.h>
 #include <dlfcn.h>
 #include <stdlib.h>
-#include "/usr/local/include/jansson_config.h"
-#include "/usr/local/include/jansson.h"
-
 
 #include "error_string.h"
 
@@ -519,7 +515,7 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 				}
 
 				snprintf(command, sizeof(command), 
-						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s --allow-unkeyed 1>/dev/null 2>&1 &",
+						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
 						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name);
 			//	snprintf(command, sizeof(command), "nohup /home/postgres/install/bottledwater-pg-master/kafka/bottledwater --postgres=postgres://localhost/protoavro --slot=protoavro --broker=K4M-KAFKA-1:9092 --schema-registry=http://K4M-KAFKA-1:8081 1>/dev/null/ 2>&1 &");
 				CHECK_RETURN(ret, spawn_bw_process(command));
