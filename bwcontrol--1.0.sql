@@ -14,7 +14,7 @@ RETURNS text
 AS 'MODULE_PATHNAME', 'pg_del_ingest_table'
 LANGUAGE C IMMUTABLE;
 
-CREATE FUNCTION pg_resume_ingest()
+CREATE FUNCTION pg_resume_ingest(INT)
 RETURNS text
 AS 'MODULE_PATHNAME', 'pg_resume_ingest'
 LANGUAGE C IMMUTABLE;

@@ -1,3 +1,118 @@
+/* K4M bwcontrol
+ *
+ * API Adaptor for C
+ *
+ * Author
+ * JHB     jhbaek@k4m.com
+ */
+
+/**
+\mainpage eXperDB PostgreSQL Plugin Api reference manual
+\author JHB  jhbaek@k4m.com
+\date 2016-11-30
+
+\section api_groups API 종류
+APIs : bwcontrol.c <br>
+error code : error_sting.h <br>
+\ref mapping <br>
+\ref control <br>
+\ref status <br>
+\ref kafka_connect <br>
+
+\section sample 
+
+@code
+	select pg_add_ingest_table('public', 'test_table', 1, 1, '');
+		INFO:  Success(9)
+		 pg_add_ingest_table
+		---------------------
+		 Success(9)
+		(1 row)
+
+	select pg_del_ingest_table('public', 'test_table');
+		INFO:  Success(0)
+		 pg_del_ingest_table
+		---------------------
+		 Success(0)
+		(1 row)
+
+	select pg_suspend_ingest();
+		INFO:  Success(0)
+		 pg_suspend_ingest
+		-------------------
+		 Success(0)
+		(1 row)
+
+	select pg_resume_ingest(1);
+		INFO:  Success(0)
+		 pg_resume_ingest
+		------------------
+		 Success(0)
+		(1 row)
+
+	select pg_get_status_ingest();
+		INFO:  Process is running(0)
+		 pg_get_status_ingest
+		-----------------------
+		 Process is running(0)
+		(1 row)
+
+	select pg_create_kafka_connect('conn_name');
+		INFO:  Success(7)
+		 pg_create_kafka_connect
+		-------------------------
+		 Success(7)
+		(1 row)
+
+	select pg_delete_kafka_connect('conn_name');
+		INFO:  Success(8)
+		 pg_delete_kafka_connect
+		-------------------------
+		 Success(8)
+		(1 row)
+@endcode
+
+\section setup
+@see README.md
+\code
+$ USE_PGXS=1 make
+$ USE_PGXS=1 make install
+\endcode
+
+\subsection Install 
+Install bwcontrol extension 
+\code
+testdb=# create extension bwcontrol;
+\endcode
+
+\subsection Uninstall 
+Uninstall bwcontrol extention
+\code
+testdb=# drop extension bwcontrol;
+\endcode
+
+\subsection Configuration 
+How to configure bwcontrol
+refer to postgresql.auto.conf
+
+bw.bwpath = '/home/robin/pghome/bin/bottledwater' <br>
+bw.kafka_broker = 'localhost:9092' <br>
+bw.schema_registry='localhost:8081' <br>
+bw.consumer='localhost:8083/connectors' <br>
+bw.consumer_sub='default-config' <br>
+
+*/
+
+/**
+ * @file bwcontrol.c
+ * @author JHB
+ * @date 30 Nov 2016
+ * @brief bwcontrol Plugin API
+ *
+ */
+
+
+
 #include "postgres.h"
 #include "fmgr.h"
 #include "executor/spi.h"
@@ -143,7 +258,7 @@ struct MemoryStruct {
  * internal functions						
  * ------------------------------------------------*/
 int check_bw_process(const char* db_name);
-int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode);
+int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode, char* snapshot);
 int check_exists_table(const char * schema_name, const char * table_name);
 int	get_kafka_connect_info(char* conn_name, char *contents);
 int remove_replication_slot(const char* db_name);
@@ -190,6 +305,24 @@ static struct curl_slist *g_curl_headers = NULL;
 ////    curl_global_cleanup();
 //}
 
+/**
+  * \addtogroup mapping table mapping API
+  * @{ */
+
+/**
+ * @brief Add mapping table API
+ *
+ * Add table in database to internal repository <br>
+ *
+ * @param[in] schema_name table schema name
+ * @param[in] table_name table name
+ * @param[in] dbtype bigdata database type 1: HDFS 2: Hive
+ * @param[in] opratetype operation type 1: insert only 2: update only 4: delete only  7: all
+ * @param[in] remark [Unused currently]
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_del_ingest_table()
+ */
+
 /* ------------------------------------------------
  * pg_add_ingest_table().
  * 
@@ -207,7 +340,7 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 
 	char db_user[NAMEDATALEN];
 	char db_name[NAMEDATALEN];
-	char hostname[NAMEDATALEN];
+//	char hostname[NAMEDATALEN];
 	int ret = 0;
 
 	/* Check parameters */
@@ -244,9 +377,9 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	if((CHECK(ret, update_mapping_table(schema_name, table_name, true))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
-	/* check and run the bw process */
-	if((CHECK(ret, control_process(db_name, db_user, hostname, conn_info, &config, MODE_INSERT))) < 0)
-		DB_LOG_RETURN(ERROR, K_FAILED_START, ret);
+//	/* check and run the bw process */
+//	if((CHECK(ret, control_process(db_name, db_user, hostname, conn_info, &config, MODE_INSERT))) < 0)
+//		DB_LOG_RETURN(ERROR, K_FAILED_START, ret);
 
 	/* sync config with kafka connecta */
 	if(strlen(config.consumer))
@@ -255,6 +388,17 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
+
+/**
+ * @brief Add mapping table API
+ *
+ * Delete table in database from internal repository <br>
+ *
+ * @param[in] schema_name table schema name
+ * @param[in] table_name table name
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_add_ingest_table()
+ */
 
 /* ------------------------------------------------
  * pg_del_ingest_table().
@@ -296,12 +440,27 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 	if((CHECK(ret, update_mapping_table(schema_name, table_name, false))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
-	/* check and send signal to reload conf */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE))) < 0)
-		DB_LOG_RETURN(INFO, K_EVENT_FAIL, ret );
+//	/* check and send signal to reload conf */
+//	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE))) < 0)
+//		DB_LOG_RETURN(INFO, K_EVENT_FAIL, ret );
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
+
+/* @} */
+
+/**
+  * \addtogroup control Control bottledwater interface engine API
+  * @{ */
+
+/**
+ * @brief Resume bottledwater process API
+ *
+ * Start replication (spawning bottledwater process.)  <br>
+ *
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_suspend_ingest()
+ */
 
 /* ------------------------------------------------
  * pg_resume_ingest().
@@ -311,6 +470,7 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 Datum
 pg_resume_ingest(PG_FUNCTION_ARGS)
 {
+	int snapshot = PG_GETARG_INT32(0);
 	char db_user[NAMEDATALEN];
 	char db_name[NAMEDATALEN];
 	int ret;
@@ -326,11 +486,22 @@ pg_resume_ingest(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* resume process */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, &config, MODE_RESUME))) < 0)
+	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, &config, MODE_RESUME, (!snapshot) ? "--skip-snapshot" : ""))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL,ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
+
+/**
+ * @brief Resume bottledwater process API
+ *
+ * Suspend replication (<br>
+ * Stop bottledwater process gracefully by sending SIGTERM)  <br>
+ * drop replication  <br>
+ *
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_suspend_ingest()
+ */
 
 /* ------------------------------------------------
  * pg_suspend_ingest().
@@ -349,7 +520,7 @@ pg_suspend_ingest(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	/* suspend process and delete replication slot */
-	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_SUSPEND))) < 0)
+	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_SUSPEND, NULL))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL, ret);
 
 	if((CHECK(ret, remove_replication_slot(db_name))) < 0)
@@ -357,6 +528,22 @@ pg_suspend_ingest(PG_FUNCTION_ARGS)
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
+
+/* @} */
+
+/**
+  * \addtogroup status Check status of bottledwater and replication.
+  * @{ */
+
+/**
+ * @brief Check status of bottledwater and replication.
+ *
+ * Check status of bottledwater and replication.  <br>
+ *
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_suspend_ingest()
+ * @see pg_resume_ingest()
+ */
 
 /* ------------------------------------------------
  * pg_get_status_ingest().
@@ -383,6 +570,22 @@ pg_get_status_ingest(PG_FUNCTION_ARGS)
 
 	DB_LOG_RETURN(INFO, K_PROC_NOT_WORKING, ret);
 }
+
+/* @} */
+
+/**
+  * \addtogroup kafka_connect Synchronize topics with Kafka-Connect.
+  * @{ */
+
+/**
+ * @brief Create Kafka connect.
+ *
+ * HTTP Request creation Kafka connection. <br>
+ *
+ * @param[in] Kafka connect name
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_delete_kafka_connect()
+ */
 
 /* ------------------------------------------------
  * pg_create_kafka_connect().
@@ -425,6 +628,16 @@ pg_create_kafka_connect(PG_FUNCTION_ARGS)
 	DB_LOG_RETURN(INFO, K_SUCCESS , ret);
 }
 
+/**
+ * @brief Delete Kafka connect.
+ *
+ * HTTP Request creation Kafka connection. <br>
+ *
+ * @param[in] Kafka connect name
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_create_kafka_connect()
+ */
+
 /* ------------------------------------------------
  * pg_delete_kafka_connect().
  * 
@@ -459,6 +672,8 @@ pg_delete_kafka_connect(PG_FUNCTION_ARGS)
 		DB_LOG_RETURN(INFO, K_SPI_ERR, ret);
 	DB_LOG_RETURN(INFO, K_SUCCESS , ret);
 }
+
+/* @} */
 
 /* ----------------------------
  *  Check bottledwater process, 
@@ -496,7 +711,7 @@ int check_bw_process(const char* db_name)
  * Spawn bottledwater 
  * Send signal to reload table list
  * ---------------------------- */
-int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode)
+int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode, char* snapshot)
 {
 	int ret = 0;
 	char conn_name[NAMEDATALEN];
@@ -513,10 +728,9 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 					if((CHECK(ret, get_kafka_connect_info(conn_name, NULL))) < 0)
 						if(strlen(db_name) < NAMEDATALEN) strcpy(conn_name, db_name);
 				}
-
 				snprintf(command, sizeof(command), 
-						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
-						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name);
+						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s %s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
+						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name, snapshot);
 			//	snprintf(command, sizeof(command), "nohup /home/postgres/install/bottledwater-pg-master/kafka/bottledwater --postgres=postgres://localhost/protoavro --slot=protoavro --broker=K4M-KAFKA-1:9092 --schema-registry=http://K4M-KAFKA-1:8081 1>/dev/null/ 2>&1 &");
 				CHECK_RETURN(ret, spawn_bw_process(command));
 			}
@@ -833,6 +1047,15 @@ static size_t response_cb(void *contents, size_t size, size_t nmemb, void *userp
 	return realsize;
 }
 
+/*-----------------------------
+* Response callback by CURL lib
+* Registered CURLOPT_WRITEFUNCTION
+*----------------------------- */
+static size_t dummy_cb(void *ptr, size_t size, size_t nmemb, void *userdata)
+{
+   return size * nmemb;
+}
+
 /*----------------------------
  * Spawn a process to execute the given shell command; don't wait for it
  * Returns the process ID (or HANDLE) so we can wait for it later
@@ -980,6 +1203,7 @@ int http_set_kafka_connect(const char* conn_name, const char *contents, const cu
 	curl_easy_setopt(g_curl, CURLOPT_HTTPHEADER, g_curl_headers);
 	curl_easy_setopt(g_curl, CURLOPT_ERRORBUFFER, curl_error);
 	curl_easy_setopt(g_curl, CURLOPT_TIMEOUT, HTTP_TIMOUT);
+	curl_easy_setopt(g_curl, CURLOPT_WRITEFUNCTION, &dummy_cb);
 
 	if(curl_easy_perform(g_curl) != CURLE_OK){
 		ret = EHTTP;
