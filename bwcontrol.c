@@ -133,6 +133,8 @@ PG_MODULE_MAGIC;
 
 PG_FUNCTION_INFO_V1(pg_add_ingest_table);
 PG_FUNCTION_INFO_V1(pg_del_ingest_table);
+PG_FUNCTION_INFO_V1(pg_add_ingest_column);
+PG_FUNCTION_INFO_V1(pg_del_ingest_column);
 PG_FUNCTION_INFO_V1(pg_resume_ingest);
 PG_FUNCTION_INFO_V1(pg_suspend_ingest);
 PG_FUNCTION_INFO_V1(pg_get_status_ingest);
@@ -213,6 +215,7 @@ void _PG_fini(void);
  * define queries 						
  * ------------------------------------------------*/
 #define CHECK_TABLE_EXISTS "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = '%s' AND tablename = '%s'"
+#define CHECK_COLUMN_EXISTS "SELECT column_name FROM information_schema.columns WHERE table_schema = '%s' AND table_name = '%s' AND column_name = '%s'"
 #define GET_DATABASE_INFO "select user, current_database() from pg_stat_activity where pg_stat_activity.pid=pg_backend_pid()"
 #define GET_REPLICATION_SETTING "select current_setting('bw.bwpath') bwpath, current_setting('bw.kafka_broker') kafka_broker, current_setting('bw.schema_registry') schema_registry, current_setting('bw.consumer') consumer, current_setting('bw.consumer_sub') consumer_sub"
 //#define INSERT_MAP_TABLE "INSERT INTO tbl_mapps SELECT A.table_catalog database_name, A.table_schema, A.table_name, B.relnamespace, B.oid reloid, A.table_catalog || '-' || A.table_name as topic_name, now() create_date, current_user create_user, '' remark FROM information_schema.tables A inner join pg_class B on A.table_name = B.relname where table_name='%s'"
@@ -228,6 +231,13 @@ FROM information_schema.tables A inner join pg_class B on A.table_name = B.relna
 where table_name='%s' and A.table_schema = '%s' \
 and B.oid = (SELECT '%s.%s'::regclass::oid) \
 and not exists (select 1 from tbl_mapps C where C.table_name = '%s' and C.table_schema = '%s');"
+#define INSERT_COLUMN_MAP_TABLE "INSERT INTO col_mapps (reloid, column_name, colseq, create_date, create_user, remark) \
+SELECT B.oid, column_name, (select count(*)+1 from col_mapps where reloid = C.reloid) ord, now(), current_user, '%s' remark \
+FROM information_schema.columns A inner join pg_class B on A.table_name = B.relname \
+JOIN tbl_mapps C on B.oid = C.reloid \
+WHERE A.table_schema = '%s' \
+AND A.table_name = '%s' \
+AND column_name = '%s'" 
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_schema = '%s' and table_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
@@ -260,9 +270,11 @@ struct MemoryStruct {
 int check_bw_process(const char* db_name);
 int control_process(const char* db_name, const char* db_user, const char* hostname, const char* conn_info, const custom_config_t* config, int mode, char* snapshot);
 int check_exists_table(const char * schema_name, const char * table_name);
+int	check_exists_column(const char * schema_name, const char * table_name, const char * column_name);
 int	get_kafka_connect_info(char* conn_name, char *contents);
 int remove_replication_slot(const char* db_name);
 int update_mapping_table(const char * schema_name, const char * table_name, bool operation);
+int update_mapping_column_table(const char *schema_name, const char *table_name, const char *column_name, const char *remark, bool operation);
 int get_database_info(char *db_user, char *db_name);
 int get_custom_config(custom_config_t *pconfig);
 static size_t response_cb(void *contents, size_t size, size_t nmemb, void *userp);
@@ -431,18 +443,109 @@ pg_del_ingest_table(PG_FUNCTION_ARGS)
 	if((CHECK(ret, get_custom_config(&config))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
-	/* get config from kafka connect */
-	if(strlen(config.consumer))
-		if((CHECK(ret, sync_with_kafka_connect(db_name, table_name, NULL, &config))) < 0)
-			DB_LOG_RETURN(ERROR, K_KAFKA_CONN_ERR, ret);
-
 	/* update table name into bw_table_list */
 	if((CHECK(ret, update_mapping_table(schema_name, table_name, false))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
+	/* get config from kafka connect */
+	if(strlen(config.consumer))
+		ret = sync_with_kafka_connect(db_name, table_name, NULL, &config);
+
 //	/* check and send signal to reload conf */
 //	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, NULL, MODE_DELETE))) < 0)
 //		DB_LOG_RETURN(INFO, K_EVENT_FAIL, ret );
+
+	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
+}
+
+/**
+  * \addtogroup mapping column API
+  * @{ */
+
+/**
+ * @brief Add mapping column API
+ *
+ * Add column in database to internal repository <br>
+ *
+ * @param[in] schema_name table schema name
+ * @param[in] table_name table name
+ * @param[in] column_name column name
+ * @param[in] remark [Unused currently]
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_del_ingest_column()
+ */
+
+/* ------------------------------------------------
+ * pg_add_ingest_column().
+ * 
+ * Usage: select pg_add_ingest_column();
+ * ------------------------------------------------ */
+Datum
+pg_add_ingest_column(PG_FUNCTION_ARGS)
+{
+	char *schema_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char *column_name = text_to_cstring(PG_GETARG_TEXT_PP(2));
+	char *remark = text_to_cstring(PG_GETARG_TEXT_PP(3));
+
+	int ret = 0;
+
+	/* Check parameters */
+
+	/* check that the database type. */
+	CHECKMAXLEN(table_name, NAMEDATALEN);
+	CHECKMAXLEN(schema_name , NAMEDATALEN);
+	CHECKMAXLEN(column_name, NAMEDATALEN);
+	CHECKMAXLEN(remark, OPTLEN );
+
+	/* check that the column exists. */
+	if((CHECK(ret, check_exists_column(schema_name, table_name, column_name))) < 0)
+		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
+
+	/* update table name into bw_table_list */
+	if((CHECK(ret, update_mapping_column_table(schema_name, table_name, column_name, remark, true))) < 0)
+		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
+
+	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
+}
+
+/**
+ * @brief Add mapping table API
+ *
+ * Delete table in database from internal repository <br>
+ *
+ * @param[in] schema_name table schema name
+ * @param[in] table_name table name
+ * @param[in] column_name column name
+ * @return return string with error code (refer to error_string.h )<br>
+ * @see pg_add_ingest_column()
+ */
+
+/* ------------------------------------------------
+ * pg_del_ingest_column().
+ * 
+ * Usage: select pg_del_ingest_column();
+ * ------------------------------------------------
+ */
+Datum
+pg_del_ingest_column(PG_FUNCTION_ARGS)
+{
+	char *schema_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
+	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char *column_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	int ret = 0;
+
+	CHECKMAXLEN(table_name, NAMEDATALEN);
+	CHECKMAXLEN(schema_name, NAMEDATALEN);
+	CHECKMAXLEN(column_name, NAMEDATALEN);
+
+	/* check that the column exists. */
+	if((CHECK(ret, check_exists_column(schema_name, table_name, column_name))) < 0)
+		DB_LOG_RETURN(ERROR, K_TABLE_NOT_EXIST, ret);
+
+	/* update table name into bw_table_list */
+	if((CHECK(ret, update_mapping_column_table(schema_name, table_name, column_name, NULL, false))) < 0)
+		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
@@ -488,6 +591,12 @@ pg_resume_ingest(PG_FUNCTION_ARGS)
 	/* resume process */
 	if((CHECK(ret, control_process(db_name, db_user, NULL, NULL, &config, MODE_RESUME, (!snapshot) ? "--skip-snapshot" : ""))) < 0)
 		DB_LOG_RETURN(ERROR, K_EVENT_FAIL,ret);
+
+	/* sync config with kafka connecta */
+	if(strlen(config.consumer))
+		if((CHECK(ret, sync_with_kafka_connect(db_name, NULL, NULL, &config))) < 0)
+			DB_LOG_RETURN(LOG, K_SUCCESS, ret);
+	
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
@@ -769,6 +878,25 @@ int	check_exists_table(const char * schema_name, const char * table_name)
 }
 
 /*----------------------------
+ * Check user input column name.
+ *---------------------------- */
+int	check_exists_column(const char * schema_name, const char * table_name, const char * column_name)
+{
+	char sql[QBUFFLEN];
+	int ret = 0;
+    SPI_connect();
+    snprintf(sql, sizeof(sql), CHECK_COLUMN_EXISTS, schema_name, table_name, column_name);
+    ret = SPI_exec(sql, 1);
+
+    if (ret != SPI_OK_SELECT || SPI_tuptable == NULL || SPI_processed <= 0) {
+		SPI_finish();
+		return ESPI;
+	}
+    SPI_finish();
+	return 0;
+}
+
+/*----------------------------
  * Add/Delete replication tables.
  *---------------------------- */
 int update_mapping_table(const char * schema_name, const char * table_name, bool operation)
@@ -780,6 +908,35 @@ int update_mapping_table(const char * schema_name, const char * table_name, bool
 
 	if(operation)
 		snprintf(sql, QBUFFLEN-1, INSERT_MAP_TABLE, table_name, schema_name, schema_name, table_name, table_name, schema_name);
+	else
+		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, schema_name, table_name);
+
+    ret = SPI_exec(sql, 1);
+	if(ret != SPI_OK_DELETE && ret != SPI_OK_INSERT){
+		for(i = 0; i < 10; i++)
+			ret = ESPI;
+	}
+
+	if(SPI_processed < 1){
+		ret = ENEXIST ;
+	}
+
+    SPI_finish();
+	return ret;
+}
+
+/*----------------------------
+ * Add/Delete replication column.
+ *---------------------------- */
+int update_mapping_column_table(const char *schema_name, const char *table_name, const char *column_name, const char *remark, bool operation)
+{
+	char sql[QBUFFLEN];
+	int i = 0;
+	int ret = 0;
+    SPI_connect();
+
+	if(operation)
+		snprintf(sql, QBUFFLEN-1, INSERT_COLUMN_MAP_TABLE, remark, schema_name, table_name, column_name);
 	else
 		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, schema_name, table_name);
 
