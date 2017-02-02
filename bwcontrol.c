@@ -561,6 +561,7 @@ pg_del_ingest_column(PG_FUNCTION_ARGS)
  *
  * Start replication (spawning bottledwater process.)  <br>
  *
+ * @param[in] snapshot 0: skip taking a consistent snapshot of the existing
  * @return return string with error code (refer to error_string.h )<br>
  * @see pg_suspend_ingest()
  */
