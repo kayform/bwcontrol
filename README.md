@@ -66,7 +66,7 @@ Examples
 calling functions via SQL.
 
 1. Create connection with Kafka-connect to synchronize whithlisting of table.
-	testdb=# pg_create_kafka_connect("testconnection");
+	testdb=# pg_make_kafka_connect("testconnection");
 	INFO:  Success(0)
 2. Make whitelisting of table.
 	testdb=# pg_add_ingest_table("myschema", "testtable", 1, 1, '');
@@ -146,7 +146,7 @@ pg_del_ingest_table(text table_schema, text table_name)
 pg_resume_ingest()
 pg_suspend_ingest()
 pg_get_status_ingest()
-pg_create_kafka_connect(text connect_name)
+pg_make_kafka_connect(text connect_name)
 pg_delete_kafka_connect(text connect_name)
 
 License

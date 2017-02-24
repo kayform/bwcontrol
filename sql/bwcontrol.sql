@@ -6,7 +6,7 @@ CREATE EXTENSION bwcontrol;
 -- 
 --
 
-select pg_create_kafka_connect('connect-name'); -- 
+select pg_make_kafka_connect('connect-name'); -- 
 create table test (a int primary key, b int[]);
 select pg_add_ingest_table('myschema', 'test', 1, 1, '');
 select pg_get_status_ingest();

@@ -39,9 +39,9 @@ RETURNS text
 AS 'MODULE_PATHNAME', 'pg_get_status_ingest'
 LANGUAGE C IMMUTABLE;
 
-CREATE FUNCTION pg_create_kafka_connect(text)
+CREATE FUNCTION pg_make_kafka_connect(text)
 RETURNS text
-AS 'MODULE_PATHNAME', 'pg_create_kafka_connect'
+AS 'MODULE_PATHNAME', 'pg_make_kafka_connect'
 LANGUAGE C IMMUTABLE;
 
 CREATE FUNCTION pg_delete_kafka_connect(text)

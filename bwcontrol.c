@@ -57,9 +57,9 @@ error code : error_sting.h <br>
 		 Process is running(0)
 		(1 row)
 
-	select pg_create_kafka_connect('conn_name');
+	select pg_make_kafka_connect('conn_name');
 		INFO:  Success(7)
-		 pg_create_kafka_connect
+		 pg_make_kafka_connect
 		-------------------------
 		 Success(7)
 		(1 row)
@@ -138,7 +138,7 @@ PG_FUNCTION_INFO_V1(pg_del_ingest_column);
 PG_FUNCTION_INFO_V1(pg_resume_ingest);
 PG_FUNCTION_INFO_V1(pg_suspend_ingest);
 PG_FUNCTION_INFO_V1(pg_get_status_ingest);
-PG_FUNCTION_INFO_V1(pg_create_kafka_connect);
+PG_FUNCTION_INFO_V1(pg_make_kafka_connect);
 PG_FUNCTION_INFO_V1(pg_delete_kafka_connect);
 
 void _PG_init(void);
@@ -698,12 +698,12 @@ pg_get_status_ingest(PG_FUNCTION_ARGS)
  */
 
 /* ------------------------------------------------
- * pg_create_kafka_connect().
+ * pg_make_kafka_connect().
  * 
- * Usage: pg_create_kafka_connect('connect name');
+ * Usage: pg_make_kafka_connect('connect name');
  * ------------------------------------------------ */
 Datum
-pg_create_kafka_connect(PG_FUNCTION_ARGS)
+pg_make_kafka_connect(PG_FUNCTION_ARGS)
 {
 	char contents[CONTENTSDATALEN];
 	int ret = 0 ;
@@ -745,7 +745,7 @@ pg_create_kafka_connect(PG_FUNCTION_ARGS)
  *
  * @param[in] Kafka connect name
  * @return return string with error code (refer to error_string.h )<br>
- * @see pg_create_kafka_connect()
+ * @see pg_make_kafka_connect()
  */
 
 /* ------------------------------------------------
