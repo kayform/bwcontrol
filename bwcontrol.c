@@ -532,7 +532,7 @@ pg_del_ingest_column(PG_FUNCTION_ARGS)
 {
 	char *schema_name = text_to_cstring(PG_GETARG_TEXT_PP(0));
 	char *table_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
-	char *column_name = text_to_cstring(PG_GETARG_TEXT_PP(1));
+	char *column_name = text_to_cstring(PG_GETARG_TEXT_PP(2));
 	int ret = 0;
 
 	CHECKMAXLEN(table_name, NAMEDATALEN);
