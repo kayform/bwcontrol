@@ -239,6 +239,7 @@ WHERE A.table_schema = '%s' \
 AND A.table_name = '%s' \
 AND column_name = '%s'" 
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_schema = '%s' and table_name = '%s'"
+#define DELETE_COLUMN_MAP_TABLE "DELETE FROM col_mapps WHERE reloid = (SELECT reloid FROM tbl_mapps WHERE table_schema = '%s' AND table_name = '%s') AND column_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
 #define UPDATE_KAFKA_CONFIG "UPDATE kafka_con_config SET contents = '%s' WHERE connect_name = '%s'"
 #define DELETE_KAFKA_CONFIG "DELETE from kafka_con_config"
@@ -939,7 +940,7 @@ int update_mapping_column_table(const char *schema_name, const char *table_name,
 	if(operation)
 		snprintf(sql, QBUFFLEN-1, INSERT_COLUMN_MAP_TABLE, remark, schema_name, table_name, column_name);
 	else
-		snprintf(sql, QBUFFLEN-1, DELETE_MAP_TABLE, schema_name, table_name);
+		snprintf(sql, QBUFFLEN-1, DELETE_COLUMN_MAP_TABLE , schema_name, table_name, column_name);
 
     ret = SPI_exec(sql, 1);
 	if(ret != SPI_OK_DELETE && ret != SPI_OK_INSERT){
