@@ -4,6 +4,7 @@
 
 #define K_TABLE_NOT_EXIST "No such table."
 #define K_COLUMN_NOT_EXIST "No such column."
+#define K_TABLE_OR_COLUMN_NOT_EXIST "No such column or table. please check col_mapps & tbl_mapps"
 #define K_NOT_SUPPORT_DBTYPE "Not support db type.(1 or 2)"
 #define K_CHECK_OPERATE "Check operate type. (operate 1~7)"
 #define K_CHECK_OPTION "Could not parse option."
