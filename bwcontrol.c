@@ -505,7 +505,7 @@ pg_add_ingest_column(PG_FUNCTION_ARGS)
 
 	/* update table name into bw_table_list */
 	if((CHECK(ret, update_mapping_column_table(schema_name, table_name, column_name, remark, true))) < 0)
-		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
+		DB_LOG_RETURN(ERROR, K_TABLE_OR_COLUMN_NOT_EXIST , ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
@@ -546,7 +546,7 @@ pg_del_ingest_column(PG_FUNCTION_ARGS)
 
 	/* update table name into bw_table_list */
 	if((CHECK(ret, update_mapping_column_table(schema_name, table_name, column_name, NULL, false))) < 0)
-		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
+		DB_LOG_RETURN(ERROR, K_TABLE_OR_COLUMN_NOT_EXIST , ret);
 
 	DB_LOG_RETURN(INFO, K_SUCCESS, ret);
 }
