@@ -792,19 +792,20 @@ pg_delete_kafka_connect(PG_FUNCTION_ARGS)
  * ---------------------------- */
 int check_bw_process(const char* db_name)
 {
-	char tmppath[MAXPGPATH];	
+	char pidpath[MAXPGPATH], tmppath[MAXPGPATH];	
 	char pidbuf[32];
 	FILE  *pidfp = NULL;
 //	struct stat st;
 
-	snprintf(tmppath, sizeof(tmppath)-1, "/tmp/bw_%s.pid", db_name);
+	snprintf(pidpath, sizeof(pidpath)-1, "/tmp/bw_%s.pid", db_name);
 
-	if ((pidfp = fopen(tmppath, "r")) == NULL){
+	if ((pidfp = fopen(pidpath, "r")) == NULL){
 		return 0; //process is not running
 	}
 
 	if (!fgets(pidbuf, sizeof(pidbuf), pidfp)){
 		fclose(pidfp);
+		unlink(pidpath);
 		return -1; //abnormal state - process started abnormally
 	}
 	
@@ -815,7 +816,10 @@ int check_bw_process(const char* db_name)
 		fclose(pidfp);
 		return atoi(pidbuf);
 	}
-	return -1;	
+	else{
+		unlink(pidpath);
+		return -1;	
+	}
 }
 
 /* ----------------------------
