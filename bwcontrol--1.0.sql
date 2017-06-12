@@ -4,7 +4,7 @@
 \echo Use "CREATE EXTENSION bwcontrol" to load this file. \quit
 
 -- Create functions
-CREATE FUNCTION pg_add_ingest_table(text, text, INT, INT, text)
+CREATE FUNCTION pg_add_ingest_table(text, text, INT, INT, text, INT)
 RETURNS text
 AS 'MODULE_PATHNAME', 'pg_add_ingest_table'
 LANGUAGE C IMMUTABLE;
