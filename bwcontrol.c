@@ -858,8 +858,19 @@ int control_process(const char* db_name, const char* db_user, const char* hostna
 						if(strlen(db_name) < NAMEDATALEN) strcpy(conn_name, db_name);
 				}
 				snprintf(command, sizeof(command), 
-						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s %s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
-						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name, snapshot);
+						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s %s%s%s --topic-prefix=%s %s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
+						config->bwpath, 
+						db_user, 
+						db_name, 
+						db_name, 
+						config->broker, 
+						strlen(config->schema_registry) ? "--schema-registry=" : "", 
+						strlen(config->schema_registry) ? config->schema_registry : "", 
+						strlen(config->schema_registry) ? "" : "-f json", 
+						conn_name, 
+						snapshot);
+//						"nohup %s --postgres=postgres://%s@127.0.0.1/%s --slot=%s --broker=%s --schema-registry=%s --topic-prefix=%s %s --allow-unkeyed --on-error=log 1>/dev/null 2>&1 &",
+//						config->bwpath, db_user, db_name, db_name, config->broker, config->schema_registry, conn_name, snapshot);
 			//	snprintf(command, sizeof(command), "nohup /home/postgres/install/bottledwater-pg-master/kafka/bottledwater --postgres=postgres://localhost/protoavro --slot=protoavro --broker=K4M-KAFKA-1:9092 --schema-registry=http://K4M-KAFKA-1:8081 1>/dev/null/ 2>&1 &");
 				CHECK_RETURN(ret, spawn_bw_process(command));
 			}
