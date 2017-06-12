@@ -238,6 +238,12 @@ JOIN tbl_mapps C on B.oid = C.reloid \
 WHERE A.table_schema = '%s' \
 AND A.table_name = '%s' \
 AND column_name = '%s'" 
+#define INSERT_WHOLE_COLUMN_MAP_TABLE "INSERT INTO col_mapps (reloid, column_name, colseq, create_date, create_user, remark) \
+SELECT B.oid, column_name, ((select count(*) from col_mapps where reloid = C.reloid)+row_number() over()) as colseq, now(), current_user, 'Batch' remark \
+FROM information_schema.columns A inner join pg_class B on A.table_name = B.relname \
+JOIN tbl_mapps C on B.oid = C.reloid \
+WHERE A.table_schema = '%s' \
+AND A.table_name = '%s'"
 #define DELETE_MAP_TABLE "DELETE FROM tbl_mapps WHERE table_schema = '%s' and table_name = '%s'"
 #define DELETE_COLUMN_MAP_TABLE "DELETE FROM col_mapps WHERE reloid = (SELECT reloid FROM tbl_mapps WHERE table_schema = '%s' AND table_name = '%s') AND column_name = '%s'"
 #define INSERT_KAFKA_CONFIG "INSERT INTO kafka_con_config VALUES(current_database(), '%s', '%s'::json->'config', now(), current_user, '')"
@@ -276,6 +282,7 @@ int	get_kafka_connect_info(char* conn_name, char *contents);
 int remove_replication_slot(const char* db_name);
 int update_mapping_table(const char * schema_name, const char * table_name, bool operation);
 int update_mapping_column_table(const char *schema_name, const char *table_name, const char *column_name, const char *remark, bool operation);
+int update_mapping_whole_column_table(const char *schema_name, const char *table_name);
 int get_database_info(char *db_user, char *db_name);
 int get_custom_config(custom_config_t *pconfig);
 static size_t response_cb(void *contents, size_t size, size_t nmemb, void *userp);
@@ -349,6 +356,7 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	int ndbtype  = PG_GETARG_INT32(2);
 	int noperate = PG_GETARG_INT32(3);
 	char *conn_info = text_to_cstring(PG_GETARG_TEXT_PP(4));
+	int whole_column = PG_GETARG_INT32(5);
 	custom_config_t config;
 
 	char db_user[NAMEDATALEN];
@@ -386,9 +394,14 @@ pg_add_ingest_table(PG_FUNCTION_ARGS)
 	if((CHECK(ret, get_database_info(db_user, db_name))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
 		
-	/* update table name into bw_table_list */
+	/* Update table name into bw_table_list */
 	if((CHECK(ret, update_mapping_table(schema_name, table_name, true))) < 0)
 		DB_LOG_RETURN(ERROR, K_SPI_ERR, ret);
+
+	/* Update column into bw_column_list */
+	if(whole_column)
+		if((CHECK(ret, update_mapping_whole_column_table(schema_name, table_name))) < 0)
+			DB_LOG_RETURN(ERROR, K_TABLE_OR_COLUMN_NOT_EXIST , ret);
 
 //	/* check and run the bw process */
 //	if((CHECK(ret, control_process(db_name, db_user, hostname, conn_info, &config, MODE_INSERT))) < 0)
@@ -948,6 +961,32 @@ int update_mapping_column_table(const char *schema_name, const char *table_name,
 
     ret = SPI_exec(sql, 1);
 	if(ret != SPI_OK_DELETE && ret != SPI_OK_INSERT){
+		for(i = 0; i < 10; i++)
+			ret = ESPI;
+	}
+
+	if(SPI_processed < 1){
+		ret = ENEXIST ;
+	}
+
+    SPI_finish();
+	return ret;
+}
+
+/*----------------------------
+ * Add whole columns of given table for replication.
+ *---------------------------- */
+int update_mapping_whole_column_table(const char *schema_name, const char *table_name)
+{
+	char sql[QBUFFLEN];
+	int i = 0;
+	int ret = 0;
+    SPI_connect();
+
+	snprintf(sql, QBUFFLEN-1, INSERT_WHOLE_COLUMN_MAP_TABLE, schema_name, table_name);
+
+    ret = SPI_exec(sql, 1);
+	if(ret != SPI_OK_INSERT){
 		for(i = 0; i < 10; i++)
 			ret = ESPI;
 	}
