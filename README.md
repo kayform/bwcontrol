@@ -3,7 +3,7 @@
 Introduction
 ============
 
-**bwcontrol** is an control plugin for bottled water. It means that the plugin can control Bottledwater process by APIs and this plugin support configurable whitelist of table feature. Also, have communication interface with Kafka-Connect with JSON format via HTTP.
+**bwcontrol** is an control plugin for bottled water. It means that the plugin can control Bottledwater process by APIs and this plugin support configurable whitelist of table feature. Also, have communication interface with Kafka-Connect with JSON format via HTTP..
 
 **bwcontrol** is released under PostgreSQL license.
 
